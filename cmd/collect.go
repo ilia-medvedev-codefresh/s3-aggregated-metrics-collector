@@ -47,7 +47,9 @@ var collectCmd = &cobra.Command{
 
 		otelContext := context.TODO()
 
-		exp,err := telemetry.NewGRPCExporter(otelContext, "localhost:4317")
+		otelGrpcEndpoint, _ := cmd.Flags().GetString("otel-grpc-endpoint")
+
+		exp,err := telemetry.NewGRPCExporter(otelContext, otelGrpcEndpoint)
 
 		if err != nil {
 			log.Fatal("Error creating OTEL GRPC exporter:", err)
@@ -96,6 +98,8 @@ func init() {
 	rootCmd.AddCommand(collectCmd)
 	collectCmd.Flags().String("region", "", "AWS region")
 	collectCmd.Flags().StringArray("bucket", []string{}, "List of S3 buckets to collect metrics from")
+	collectCmd.Flags().String("otel-grpc-endpoint", "localhost:4317", "Open Telemetry receiver gRPC endpoint")
 	collectCmd.Flags().Int("key-aggregation-depth", 0, "Key depth for object size aggregation metric")
 	_ = collectCmd.MarkFlagRequired("bucket")
+	_ = collectCmd.MarkFlagRequired("otel-grpc-endpoint")
 }
