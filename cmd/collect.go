@@ -6,11 +6,10 @@ import (
 	"log"
 	"os"
 
-	s3cli "github.com/ilia-medvedev-codefresh/aws-s3-otel-metrics/pkg/s3_client"
-	telemetry "github.com/ilia-medvedev-codefresh/aws-s3-otel-metrics/pkg/telemetry"
+	s3cli "github.com/ilia-medvedev-codefresh/s3-aggregated-otel-metrics/pkg/s3_client"
+	telemetry "github.com/ilia-medvedev-codefresh/s3-aggregated-otel-metrics/pkg/telemetry"
 	"github.com/spf13/cobra"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/exporters/stdout/stdoutmetric"
 	"go.opentelemetry.io/otel/metric"
 )
 
@@ -25,8 +24,7 @@ var collectCmd = &cobra.Command{
 
 		if region == "" {
 			if reg, exists := os.LookupEnv("AWS_REGION"); !exists {
-				fmt.Println("Error: AWS region not specified. Use --region flag or set AWS_REGION environment variable.")
-				return
+				log.Fatal("Error: AWS region not specified. Use --region flag or set AWS_REGION environment variable.")
 			} else {
 				region = reg
 			}
@@ -35,33 +33,40 @@ var collectCmd = &cobra.Command{
 		err, s3client := s3cli.NewS3Client(region)
 
 		if err != nil {
-			fmt.Println("Error creating S3 client:", err)
-			return
+			log.Fatal("Error creating S3 client:", err)
 		}
 
 
 		buckets, _ := cmd.Flags().GetStringArray("bucket")
 
 		if len(buckets) == 0 {
-			fmt.Println("Error: No S3 buckets specified")
-			return
+			log.Fatal("Error: No S3 buckets specified")
 		}
 
 		keyAggregationDepth, _ := cmd.Flags().GetInt("key-aggregation-depth")
 
-		exp, err := stdoutmetric.New()
+		otelContext := context.TODO()
+
+		exp,err := telemetry.NewGRPCExporter(otelContext, "localhost:4317")
+
+		if err != nil {
+			log.Fatal("Error creating OTEL GRPC exporter:", err)
+		}
+
+		meter, err := telemetry.NewMeter(otelContext, exp)
+
+		defer func() {
+			err = meter.Shutdown(err)
+			if err != nil {
+				log.Fatal("OTEL collection failed:", err)
+			}
+		}()
 
 		if err != nil {
 			log.Fatal(err)
 		}
 
-		meter, err := telemetry.NewMeter(context.TODO(), exp)
-
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		gauage, _ := meter.Meter.Float64Gauge("s3.aggregated.object.size.bytes", metric.WithDescription("Aggregated object size in bytes"), metric.WithUnit("Bytes"))
+		sizesGauage, _ := meter.Meter.Float64Gauge("s3.aggregated.object.size.bytes", metric.WithDescription("Aggregated object size in bytes"), metric.WithUnit("Bytes"))
 
 		for _, bucket := range buckets {
 			err, objects := s3client.ListObjectSizeBytes(bucket, keyAggregationDepth)
@@ -72,11 +77,10 @@ var collectCmd = &cobra.Command{
 			}
 
 			for k,v := range objects {
-				gauage.Record(meter.Context, float64(v), metric.WithAttributes(
+				sizesGauage.Record(meter.Context, float64(v), metric.WithAttributes(
 					attribute.String("bucket", bucket),
 					attribute.String("aggregate.key", k),
 					))
-				//fmt.Printf("Bucket: %s, Object: %s, Size: %d bytes\n", bucket, k, v)
 			}
 
 			err = meter.Collect()
@@ -93,5 +97,5 @@ func init() {
 	collectCmd.Flags().String("region", "", "AWS region")
 	collectCmd.Flags().StringArray("bucket", []string{}, "List of S3 buckets to collect metrics from")
 	collectCmd.Flags().Int("key-aggregation-depth", 0, "Key depth for object size aggregation metric")
-	collectCmd.MarkFlagRequired("bucket")
+	_ = collectCmd.MarkFlagRequired("bucket")
 }

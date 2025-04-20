@@ -42,12 +42,7 @@ func(c *S3Client) ListObjectSizeBytes(bucket string, depth int) (error, map[stri
 		for _, obj := range page.Contents {
 
 				key := strings.Join(splitKeyByDepth(*aws.String(*obj.Key), depth), "/")
-
-				if _,hasKey := sizeMap[key]; hasKey {
-					sizeMap[key] += *obj.Size
-				} else {
-					sizeMap[key] = *obj.Size
-				}
+				sizeMap[key] += *obj.Size
 		}
 
 		return true

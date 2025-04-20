@@ -2,13 +2,14 @@ package telemetry
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
 	"go.opentelemetry.io/otel/metric"
 	metricsdk "go.opentelemetry.io/otel/sdk/metric"
-    "go.opentelemetry.io/otel/sdk/metric/metricdata"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	"go.opentelemetry.io/otel/sdk/resource"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 )
@@ -16,13 +17,13 @@ import (
 type OtelMeter struct {
     reader      metricsdk.Reader
     exporter    metricsdk.Exporter
+    shutdownFunctions    []func(ctx context.Context) error
     Meter metric.Meter
     Context context.Context
 }
 
-// you might want to use in your application.
 func NewMeter(ctx context.Context, exporter metricsdk.Exporter) (*OtelMeter, error) {
-
+    // Because we are using OTEL in a cobra-cli application, we are creating a manual reader that will read metrics on demand instead of in the background
     reader := metricsdk.NewManualReader()
 
     resource, err := getResource()
@@ -46,46 +47,54 @@ func NewMeter(ctx context.Context, exporter metricsdk.Exporter) (*OtelMeter, err
     }
 
     return &OtelMeter{
+        Context: ctx,
         exporter: exporter,
-        Meter: provider.Meter("aws-s3-metrics"),
+        Meter: provider.Meter("s3-aggregated-otel-metrics"),
         reader: reader,
+        shutdownFunctions: []func(ctx context.Context) error{
+            provider.Shutdown,
+        },
     }, nil
 }
 
 func (m *OtelMeter) Collect() error {
-    //ctx, cancel := context.WithTimeout(m.Context, 5*time.Second)
+    var err error
 
-    //defer cancel()
+    ctx, cancel := context.WithTimeout(m.Context, 5*time.Second)
+
+    defer func() {
+        cancel()
+    }()
 
     collectedMetrics := &metricdata.ResourceMetrics{}
 
-    if err := m.reader.Collect(m.Context, collectedMetrics); err != nil {
+    if err := m.reader.Collect(ctx, collectedMetrics); err != nil {
         return fmt.Errorf("could not collect metrics: %w", err)
     }
 
-    err := m.exporter.Export(context.TODO(), collectedMetrics)
+    err = m.exporter.Export(context.TODO(), collectedMetrics)
 
     if err != nil {
         return fmt.Errorf("could not export metrics: %w", err)
     }
 
-    return nil
+    return err
 }
 
-// getResource creates the resource that describes our application.
-//
-// You can add any attributes to your resource and all your metrics
-// will contain those attributes automatically.
-//
-// There are some attributes that are very important to be added to the resource:
-// 1. hostname: allows you to identify host-specific problems
-// 2. version: allows you to pinpoint problems in specific versions
+func (m *OtelMeter) Shutdown(err error) error {
+    for _, fn := range m.shutdownFunctions {
+		err = errors.Join(err, fn(m.Context))
+	}
+
+	return err
+}
+
 func getResource() (*resource.Resource, error) {
     resource, err := resource.Merge(
         resource.Default(),
         resource.NewWithAttributes(
             semconv.SchemaURL,
-            semconv.ServiceNameKey.String("aws-s3-metrics"),
+            semconv.ServiceNameKey.String("s3-aggregated-otel-metrics"),
         ),
     )
     if err != nil {
