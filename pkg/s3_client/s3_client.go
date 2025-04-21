@@ -12,6 +12,11 @@ type S3Client struct {
 	Client *s3.S3
 }
 
+type S3Prefix struct {
+	TotalSize int64
+	ObjectCount int64
+}
+
 func NewS3Client(region string) (error, *S3Client) {
 	sess, err := session.NewSession(&aws.Config{
 		Region: aws.String(region),
@@ -27,9 +32,9 @@ func NewS3Client(region string) (error, *S3Client) {
 	}
 }
 
-func(c *S3Client) ListObjectSizeBytes(bucket string, depth int) (error, map[string]int64) {
+func(c *S3Client) AggregateObjectsByDepth(bucket string, depth int) (error, map[string]S3Prefix) {
 
-	sizeMap := make(map[string]int64)
+	prefixMap := make(map[string]S3Prefix)
 
 	// Set the parameters for listing objects in the S3 bucket
 	params := &s3.ListObjectsV2Input{
@@ -42,13 +47,22 @@ func(c *S3Client) ListObjectSizeBytes(bucket string, depth int) (error, map[stri
 		for _, obj := range page.Contents {
 
 				key := strings.Join(splitKeyByDepth(*aws.String(*obj.Key), depth), "/")
-				sizeMap[key] += *obj.Size
+
+				if prefix, ok := prefixMap[key]; ok {
+					prefix.TotalSize += *obj.Size
+					prefixMap[key] = prefix
+				} else {
+					prefixMap[key] = S3Prefix{
+						TotalSize:   *obj.Size,
+						ObjectCount: 1,
+				}
+			}
 		}
 
 		return true
 	})
 
-	return err, sizeMap
+	return err, prefixMap
 }
 
 func splitKeyByDepth(key string, depth int) []string {

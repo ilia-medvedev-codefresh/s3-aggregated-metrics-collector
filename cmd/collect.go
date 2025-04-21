@@ -68,28 +68,32 @@ var collectCmd = &cobra.Command{
 			log.Fatal(err)
 		}
 
-		sizesGauage, _ := meter.Meter.Float64Gauge("s3.aggregated.object.size.bytes", metric.WithDescription("Aggregated object size in bytes"), metric.WithUnit("Bytes"))
+		sizesGauage, _ := meter.Meter.Float64Gauge("s3.prefix.size", metric.WithDescription("Aggregated object size in bytes"), metric.WithUnit("bytes"))
+		// We use gague as number of objects can decrease over time as object get deleted by lifecycle policies for example
+		totalObjectsGauage, _ := meter.Meter.Float64Gauge("s3.prefix.object.total", metric.WithDescription("Total objects in prefix"))
 
 		for _, bucket := range buckets {
-			err, objects := s3client.ListObjectSizeBytes(bucket, keyAggregationDepth)
+			err, objects := s3client.AggregateObjectsByDepth(bucket, keyAggregationDepth)
 
 			if err != nil {
 				fmt.Println("Error listing objects:", err)
 				return
 			}
 
+			// Record metrics
 			for k,v := range objects {
-				sizesGauage.Record(meter.Context, float64(v), metric.WithAttributes(
+				sizesGauage.Record(meter.Context, float64(v.TotalSize), metric.WithAttributes(
 					attribute.String("bucket", bucket),
-					attribute.String("aggregate.key", k),
+					attribute.String("prefix", k),
+					))
+
+					totalObjectsGauage.Record(meter.Context, float64(v.ObjectCount), metric.WithAttributes(
+					attribute.String("bucket", bucket),
+					attribute.String("prefix", k),
 					))
 			}
 
 			err = meter.Collect()
-
-			if err != nil {
-				log.Fatal(err)
-			}
 		}
 	},
 }
