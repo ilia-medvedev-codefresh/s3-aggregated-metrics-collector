@@ -15,74 +15,73 @@ import (
 )
 
 type OtelMeter struct {
-    reader      metricsdk.Reader
-    exporter    metricsdk.Exporter
-    shutdownFunctions    []func(ctx context.Context) error
-    Meter metric.Meter
-    Context context.Context
+	reader            metricsdk.Reader
+	exporter          metricsdk.Exporter
+	shutdownFunctions []func(ctx context.Context) error
+	Meter             metric.Meter
+	Context           context.Context
 }
 
 func NewMeter(ctx context.Context, exporter metricsdk.Exporter) (*OtelMeter, error) {
-    // Because we are using OTEL in a cobra-cli application, we are creating a manual reader that will read metrics on demand instead of in the background
-    reader := metricsdk.NewManualReader()
+	// Because we are using OTEL in a cobra-cli application, we are creating a manual reader that will read metrics on demand instead of in the background
+	reader := metricsdk.NewManualReader()
 
-    resource, err := getResource()
+	resource, err := getResource()
 
-    if err != nil {
-      return nil, fmt.Errorf("could not get resource: %w", err)
-    }
+	if err != nil {
+		return nil, fmt.Errorf("could not get resource: %w", err)
+	}
 
-      if err != nil {
-          return nil, fmt.Errorf("could not get collector exporter: %w", err)
-      }
+	if err != nil {
+		return nil, fmt.Errorf("could not get collector exporter: %w", err)
+	}
 
+	provider := metricsdk.NewMeterProvider(
+		metricsdk.WithResource(resource),
+		metricsdk.WithReader(reader),
+	)
 
-      provider := metricsdk.NewMeterProvider(
-          metricsdk.WithResource(resource),
-          metricsdk.WithReader(reader),
-      )
+	if err != nil {
+		return nil, fmt.Errorf("could not create meter provider: %w", err)
+	}
 
-    if err != nil {
-        return nil, fmt.Errorf("could not create meter provider: %w", err)
-    }
-
-    return &OtelMeter{
-        Context: ctx,
-        exporter: exporter,
-        Meter: provider.Meter("s3-aggregated-otel-metrics"),
-        reader: reader,
-        shutdownFunctions: []func(ctx context.Context) error{
-            provider.Shutdown,
-        },
-    }, nil
+	return &OtelMeter{
+		Context:  ctx,
+		exporter: exporter,
+		Meter:    provider.Meter("s3-aggregated-metrics-collector"),
+		reader:   reader,
+		shutdownFunctions: []func(ctx context.Context) error{
+			provider.Shutdown,
+		},
+	}, nil
 }
 
 func (m *OtelMeter) Collect() error {
-    var err error
+	var err error
 
-    ctx, cancel := context.WithTimeout(m.Context, 5*time.Second)
+	ctx, cancel := context.WithTimeout(m.Context, 5*time.Second)
 
-    defer func() {
-        cancel()
-    }()
+	defer func() {
+		cancel()
+	}()
 
-    collectedMetrics := &metricdata.ResourceMetrics{}
+	collectedMetrics := &metricdata.ResourceMetrics{}
 
-    if err := m.reader.Collect(ctx, collectedMetrics); err != nil {
-        return fmt.Errorf("could not collect metrics: %w", err)
-    }
+	if err := m.reader.Collect(ctx, collectedMetrics); err != nil {
+		return fmt.Errorf("could not collect metrics: %w", err)
+	}
 
-    err = m.exporter.Export(context.TODO(), collectedMetrics)
+	err = m.exporter.Export(context.TODO(), collectedMetrics)
 
-    if err != nil {
-        return fmt.Errorf("could not export metrics: %w", err)
-    }
+	if err != nil {
+		return fmt.Errorf("could not export metrics: %w", err)
+	}
 
-    return err
+	return err
 }
 
 func (m *OtelMeter) Shutdown(err error) error {
-    for _, fn := range m.shutdownFunctions {
+	for _, fn := range m.shutdownFunctions {
 		err = errors.Join(err, fn(m.Context))
 	}
 
@@ -90,33 +89,32 @@ func (m *OtelMeter) Shutdown(err error) error {
 }
 
 func getResource() (*resource.Resource, error) {
-    resource, err := resource.Merge(
-        resource.Default(),
-        resource.NewWithAttributes(
-            semconv.SchemaURL,
-            semconv.ServiceNameKey.String("s3-aggregated-otel-metrics"),
-        ),
-    )
-    if err != nil {
-        return nil, fmt.Errorf("could not merge resources: %w", err)
-  }
+	resource, err := resource.Merge(
+		resource.Default(),
+		resource.NewWithAttributes(
+			semconv.SchemaURL,
+			semconv.ServiceNameKey.String("s3-aggregated-metrics-collector"),
+		),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("could not merge resources: %w", err)
+	}
 
-    return resource, nil
+	return resource, nil
 }
 
-
 func NewGRPCExporter(ctx context.Context, endpoint string) (metricsdk.Exporter, error) {
-    ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-    defer cancel()
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 
-    exporter, err := otlpmetricgrpc.New(ctx,
-        otlpmetricgrpc.WithEndpoint(endpoint),
-        otlpmetricgrpc.WithCompressor("gzip"),
-        otlpmetricgrpc.WithInsecure(),
-    )
-    if err != nil {
-        return nil, fmt.Errorf("could not create metric exporter: %w", err)
-    }
+	exporter, err := otlpmetricgrpc.New(ctx,
+		otlpmetricgrpc.WithEndpoint(endpoint),
+		otlpmetricgrpc.WithCompressor("gzip"),
+		otlpmetricgrpc.WithInsecure(),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("could not create metric exporter: %w", err)
+	}
 
-    return exporter, nil
+	return exporter, nil
 }

@@ -8,9 +8,9 @@ import (
 	"os"
 	"sync"
 
-	prefix_collector "github.com/ilia-medvedev-codefresh/s3-aggregated-otel-metrics/pkg/prefix_collector"
-	s3cli "github.com/ilia-medvedev-codefresh/s3-aggregated-otel-metrics/pkg/s3_client"
-	telemetry "github.com/ilia-medvedev-codefresh/s3-aggregated-otel-metrics/pkg/telemetry"
+	prefix_collector "github.com/ilia-medvedev-codefresh/s3-aggregated-metrics-collector/pkg/prefix_collector"
+	s3cli "github.com/ilia-medvedev-codefresh/s3-aggregated-metrics-collector/pkg/s3_client"
+	telemetry "github.com/ilia-medvedev-codefresh/s3-aggregated-metrics-collector/pkg/telemetry"
 
 	"github.com/spf13/cobra"
 )
@@ -32,7 +32,7 @@ var collectCmd = &cobra.Command{
 			}
 		}
 
-		err, s3client := s3cli.NewS3Client(region)
+		s3client, err := s3cli.NewS3Client(region)
 
 		if err != nil {
 			log.Fatal("Error creating S3 client:", err)
@@ -50,7 +50,7 @@ var collectCmd = &cobra.Command{
 
 		otelGrpcEndpoint, _ := cmd.Flags().GetString("otel-grpc-endpoint")
 
-		exp,err := telemetry.NewGRPCExporter(otelContext, otelGrpcEndpoint)
+		exp, err := telemetry.NewGRPCExporter(otelContext, otelGrpcEndpoint)
 
 		if err != nil {
 			log.Fatal("Error creating OTEL GRPC exporter:", err)

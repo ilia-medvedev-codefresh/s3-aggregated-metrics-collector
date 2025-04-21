@@ -14,33 +14,32 @@ type S3Client struct {
 }
 
 type S3Prefix struct {
-	TotalSize int64
+	TotalSize   int64
 	ObjectCount int64
 }
 
-func NewS3Client(region string) (error, *S3Client) {
+func NewS3Client(region string) (*S3Client, error) {
 
 	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion(region))
 
 	if err != nil {
-		return err, nil
+		return nil, err
 	}
 
 	cl := s3.NewFromConfig(cfg)
 
 	if err != nil {
-		return err, nil
+		return nil, err
 	}
 
-	return nil, &S3Client{
+	return &S3Client{
 		Client: *cl,
-	}
+	}, nil
 }
 
-func(c *S3Client) AggregateObjectsByDepth(bucket string, depth int) (error, map[string]S3Prefix) {
+func (c *S3Client) AggregateObjectsByDepth(bucket string, depth int) (map[string]S3Prefix, error) {
 
 	prefixMap := make(map[string]S3Prefix)
-
 
 	paginator := s3.NewListObjectsV2Paginator(&c.Client, &s3.ListObjectsV2Input{
 		Bucket: aws.String(bucket),
@@ -51,7 +50,7 @@ func(c *S3Client) AggregateObjectsByDepth(bucket string, depth int) (error, map[
 		page, err := paginator.NextPage(context.TODO())
 
 		if err != nil {
-			return err, nil
+			return nil, err
 		}
 
 		// Log the objects found
@@ -64,15 +63,15 @@ func(c *S3Client) AggregateObjectsByDepth(bucket string, depth int) (error, map[
 				prefix.ObjectCount++
 				prefixMap[key] = prefix
 			} else {
-			prefixMap[key] = S3Prefix{
-				TotalSize:   *obj.Size,
-				ObjectCount: 1,
+				prefixMap[key] = S3Prefix{
+					TotalSize:   *obj.Size,
+					ObjectCount: 1,
 				}
 			}
 		}
 	}
 
-	return nil, prefixMap
+	return prefixMap, nil
 }
 
 func splitKeyByDepth(key string, depth int) []string {

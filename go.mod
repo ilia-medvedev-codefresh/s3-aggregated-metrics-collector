@@ -1,4 +1,4 @@
-module github.com/ilia-medvedev-codefresh/s3-aggregated-otel-metrics
+module github.com/ilia-medvedev-codefresh/s3-aggregated-metrics-collector
 
 go 1.23
 
