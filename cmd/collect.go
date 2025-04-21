@@ -2,15 +2,17 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
+	"sync"
 
+	prefix_collector "github.com/ilia-medvedev-codefresh/s3-aggregated-otel-metrics/pkg/prefix_collector"
 	s3cli "github.com/ilia-medvedev-codefresh/s3-aggregated-otel-metrics/pkg/s3_client"
 	telemetry "github.com/ilia-medvedev-codefresh/s3-aggregated-otel-metrics/pkg/telemetry"
+
 	"github.com/spf13/cobra"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric"
 )
 
 // collectCmd represents the collect command
@@ -36,7 +38,6 @@ var collectCmd = &cobra.Command{
 			log.Fatal("Error creating S3 client:", err)
 		}
 
-
 		buckets, _ := cmd.Flags().GetStringArray("bucket")
 
 		if len(buckets) == 0 {
@@ -58,42 +59,48 @@ var collectCmd = &cobra.Command{
 		meter, err := telemetry.NewMeter(otelContext, exp)
 
 		defer func() {
+			log.Print("Shutting down OTEL collector...")
+
 			err = meter.Shutdown(err)
 			if err != nil {
 				log.Fatal("OTEL collection failed:", err)
 			}
+
+			log.Println("OTEL collector shutdown done!")
 		}()
 
 		if err != nil {
 			log.Fatal(err)
 		}
 
-		sizesGauage, _ := meter.Meter.Float64Gauge("s3.prefix.size", metric.WithDescription("Aggregated object size in bytes"), metric.WithUnit("bytes"))
-		// We use gague as number of objects can decrease over time as object get deleted by lifecycle policies for example
-		totalObjectsGauage, _ := meter.Meter.Float64Gauge("s3.prefix.object.total", metric.WithDescription("Total objects in prefix"))
+		prefixCollector, err := prefix_collector.NewPrefixCollector(s3client, meter)
+
+		if err != nil {
+			log.Fatal("Error initalizing collector:", err)
+		}
+
+		var wg sync.WaitGroup
+
+		errCh := make(chan error, len(buckets))
 
 		for _, bucket := range buckets {
-			err, objects := s3client.AggregateObjectsByDepth(bucket, keyAggregationDepth)
+			wg.Add(1)
+			go func(b string) {
+				defer wg.Done()
+				err := prefixCollector.Collect(b, keyAggregationDepth)
+				if err != nil {
+					errCh <- fmt.Errorf("collection failed for bucket %s with the following error: %s", b, err.Error())
+				}
+			}(bucket)
+		}
 
-			if err != nil {
-				fmt.Println("Error listing objects:", err)
-				return
-			}
+		go func() {
+			wg.Wait()
+			close(errCh)
+		}()
 
-			// Record metrics
-			for k,v := range objects {
-				sizesGauage.Record(meter.Context, float64(v.TotalSize), metric.WithAttributes(
-					attribute.String("bucket", bucket),
-					attribute.String("prefix", k),
-					))
-
-					totalObjectsGauage.Record(meter.Context, float64(v.ObjectCount), metric.WithAttributes(
-					attribute.String("bucket", bucket),
-					attribute.String("prefix", k),
-					))
-			}
-
-			err = meter.Collect()
+		for collectionError := range errCh {
+			err = errors.Join(err, collectionError)
 		}
 	},
 }

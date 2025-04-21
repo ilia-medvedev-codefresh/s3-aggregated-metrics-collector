@@ -1,15 +1,16 @@
 package s3_client
 
 import (
+	"context"
 	"strings"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
 type S3Client struct {
-	Client *s3.S3
+	Client s3.Client
 }
 
 type S3Prefix struct {
@@ -18,17 +19,21 @@ type S3Prefix struct {
 }
 
 func NewS3Client(region string) (error, *S3Client) {
-	sess, err := session.NewSession(&aws.Config{
-		Region: aws.String(region),
-	})
+
+	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion(region))
+
 	if err != nil {
 		return err, nil
 	}
 
-	client := s3.New(sess)
+	cl := s3.NewFromConfig(cfg)
+
+	if err != nil {
+		return err, nil
+	}
 
 	return nil, &S3Client{
-		Client: client,
+		Client: *cl,
 	}
 }
 
@@ -36,33 +41,38 @@ func(c *S3Client) AggregateObjectsByDepth(bucket string, depth int) (error, map[
 
 	prefixMap := make(map[string]S3Prefix)
 
-	// Set the parameters for listing objects in the S3 bucket
-	params := &s3.ListObjectsV2Input{
+
+	paginator := s3.NewListObjectsV2Paginator(&c.Client, &s3.ListObjectsV2Input{
 		Bucket: aws.String(bucket),
-	}
+	})
 
-	// Paginate through all objects in the bucket
-	err := c.Client.ListObjectsV2Pages(params, func(page *s3.ListObjectsV2Output, lastPage bool) bool {
+	for paginator.HasMorePages() {
 
+		page, err := paginator.NextPage(context.TODO())
+
+		if err != nil {
+			return err, nil
+		}
+
+		// Log the objects found
 		for _, obj := range page.Contents {
 
-				key := strings.Join(splitKeyByDepth(*aws.String(*obj.Key), depth), "/")
+			key := strings.Join(splitKeyByDepth(*aws.String(*obj.Key), depth), "/")
 
-				if prefix, ok := prefixMap[key]; ok {
-					prefix.TotalSize += *obj.Size
-					prefixMap[key] = prefix
-				} else {
-					prefixMap[key] = S3Prefix{
-						TotalSize:   *obj.Size,
-						ObjectCount: 1,
+			if prefix, ok := prefixMap[key]; ok {
+				prefix.TotalSize += *obj.Size
+				prefix.ObjectCount++
+				prefixMap[key] = prefix
+			} else {
+			prefixMap[key] = S3Prefix{
+				TotalSize:   *obj.Size,
+				ObjectCount: 1,
 				}
 			}
 		}
+	}
 
-		return true
-	})
-
-	return err, prefixMap
+	return nil, prefixMap
 }
 
 func splitKeyByDepth(key string, depth int) []string {
