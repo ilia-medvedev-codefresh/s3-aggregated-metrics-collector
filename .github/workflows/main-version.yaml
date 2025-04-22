@@ -74,4 +74,4 @@ jobs:
       - name: Push Helm chart to OCI registry
         run: |
           helm registry login ghcr.io -u ${{ github.actor }} -p ${{ secrets.GITHUB_TOKEN }}
-          helm push .deploy/charts/s3-aggregated-metrics-collector-*.tgz oci://ghcr.io/${{ github.repository }}/chart
+          helm push .deploy/charts/s3-aggregated-metrics-collector-*.tgz oci://ghcr.io/${{ github.repository }}/charts
