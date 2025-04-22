@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  test:
+    name: Run Tests, Lint, and Check Formatting
+    runs-on: ubuntu-latest
+
+    steps:
+      # Checkout the repository
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # Set up Go environment
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: 1.23
+
+      # Install dependencies
+      - name: Install dependencies
+        run: go mod download
+
+      # Run tests
+      - name: Run Go tests
+        run: go test ./... -v
+
+      # Check formatting
+      - name: Check if Go files are formatted
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "The following files are not formatted:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      # Run golangci-lint
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v3
+        with:
+          version: latest
+
+      # Check if docs are up to date
+      - name: Check if docs are up to date
+        run: |
+          go run tools/cmd-docs/main.go
+          if ! git diff --quiet docs/; then
+            echo "Docs are not up to date. Please regenerate them using tools/cmd-docs."
+            git diff docs/
+            exit 1
+          fi

@@ -11,7 +11,7 @@ import (
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
-	Use: "s3-aggregated-metrics-collector",
+	Use:   "s3-aggregated-metrics-collector",
 	Short: "Gathers aggregated object metrics from S3 buckets and export them to Open Telemetry collectors",
 }
 

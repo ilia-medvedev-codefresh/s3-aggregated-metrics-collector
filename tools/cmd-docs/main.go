@@ -1,9 +1,8 @@
 package main
 
-
 import (
-	"github.com/spf13/cobra/doc"
 	"github.com/ilia-medvedev-codefresh/s3-aggregated-metrics-collector/cmd"
+	"github.com/spf13/cobra/doc"
 )
 
 func main() {
