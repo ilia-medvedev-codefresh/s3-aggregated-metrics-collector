@@ -1,0 +1,3 @@
+{{- if eq (len .Values.collector.buckets) 0 }}
+{{- fail "You must specify at least one bucket in the collector.buckets list." }}
+{{- end }}
