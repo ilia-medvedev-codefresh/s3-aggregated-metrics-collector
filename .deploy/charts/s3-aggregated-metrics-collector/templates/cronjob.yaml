@@ -1,0 +1,61 @@
+{{- if eq .Values.mode "cronjob" }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "s3-aggregated-metrics-collector.fullname" . }}
+  labels:
+    {{- include "s3-aggregated-metrics-collector.labels" . | nindent 4 }}
+spec:
+  schedule: "{{ .Values.cronjob.schedule }}"
+  successfulJobsHistoryLimit: {{ .Values.cronjob.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.cronjob.failedJobsHistoryLimit }}
+  concurrencyPolicy: {{ .Values.cronjob.concurrencyPolicy }}
+  jobTemplate:
+    spec:
+      backoffLimit: {{ .Values.cronjob.backoffLimit }}
+      template:
+        metadata:
+          labels:
+            {{- include "s3-aggregated-metrics-collector.selectorLabels" . | nindent 12 }}
+        spec:
+          restartPolicy: {{ .Values.cronjob.restartPolicy }}
+          serviceAccountName: {{ include "s3-aggregated-metrics-collector.serviceAccountName" . }}
+          containers:
+            - name: {{ .Chart.Name }}
+              args:
+                - "collect"
+                - "--key-aggregation-depth"
+                - {{ .Values.collector.prefixDepth | quote }}
+                - "--otel-grpc-endpoint"
+                - {{ .Values.collector.openTelemetryGrpcEndpoint | quote }}
+                {{- range $index, $bucket := .Values.collector.buckets }}
+                - "--bucket"
+                - {{ $bucket | quote }}
+                {{- end }}
+              securityContext:
+                {{- toYaml .Values.securityContext | nindent 16 }}
+              image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              resources:
+                {{- toYaml .Values.resources | nindent 16 }}
+              {{- with .Values.volumeMounts }}
+              volumeMounts:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
+          {{- with .Values.volumes }}
+          volumes:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.affinity }}
+          affinity:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+{{- end }}

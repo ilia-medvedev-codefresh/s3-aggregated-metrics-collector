@@ -1,6 +1,0 @@
-name: s3-aggregated-metrics-collector
-version: 0.0.1
-description: A Helm chart for deploying the S3 Aggregated Metrics Collector
-type: application
-apiVersion: v2
-appVersion: 0.0.1

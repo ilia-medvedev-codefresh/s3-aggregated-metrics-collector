@@ -18,14 +18,14 @@ type PrefixCollector struct {
 
 func NewPrefixCollector(s3Client *s3cli.S3Client, meter *telemetry.OtelMeter) (*PrefixCollector, error) {
 
-	sizesGauage, err := meter.Meter.Float64Gauge("s3.prefix.size", metric.WithDescription("Aggregated object size in bytes"), metric.WithUnit("bytes"))
+	sizesGauage, err := meter.Meter.Float64Gauge("s3.aggregated.storage.size", metric.WithDescription("Aggregated object size in bytes"), metric.WithUnit("bytes"))
 
 	if err != nil {
 		return nil, err
 	}
 
 	// We use gague as number of objects can decrease over time as object get deleted by lifecycle policies for example
-	totalObjectsGauage, err := meter.Meter.Float64Gauge("s3.prefix.object.total", metric.WithDescription("Total objects in prefix"))
+	totalObjectsGauage, err := meter.Meter.Float64Gauge("s3.aggregated.objects.total", metric.WithDescription("Total objects in prefix"))
 
 	if err != nil {
 		return nil, err
